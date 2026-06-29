@@ -320,15 +320,46 @@ export const UI_HTML = `<!DOCTYPE html>
         body: JSON.stringify({ message: text }),
       });
 
-      const data = await res.json();
-      removeTyping();
+      if (!res.ok || !res.body) throw new Error('Network error');
 
-      if (data.sessionId) {
-        sessionId = data.sessionId;
-        localStorage.setItem('session_id', sessionId);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let bubble = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (evt.type === 'start') {
+            sessionId = evt.sessionId;
+            localStorage.setItem('session_id', sessionId);
+          }
+          if (evt.type === 'chunk') {
+            if (!bubble) {
+              removeTyping();
+              bubble = addMsg('assistant', '');
+            }
+            bubble.textContent += evt.text;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
+          if (evt.type === 'error') {
+            removeTyping();
+            addMsg('assistant', evt.error || 'שגיאה לא ידועה');
+          }
+        }
       }
 
-      addMsg('assistant', data.reply || data.error || 'שגיאה לא ידועה');
+      if (!bubble) { removeTyping(); addMsg('assistant', '...'); }
     } catch (err) {
       removeTyping();
       addMsg('assistant', 'שגיאת תקשורת. נסה שוב.');

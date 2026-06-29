@@ -23,21 +23,45 @@ export interface RunResult {
   tasksUpdated: number;
 }
 
-export async function runAssistant(opts: RunOptions): Promise<RunResult> {
-  const { ai, db, githubToken, anthropicKey, conversationId, userMessage } = opts;
+// ── Streaming entry point ─────────────────────────────────────
 
-  const memories = await getMemories(db);
-  const systemPrompt = buildSystemPrompt(formatMemoriesForPrompt(memories));
+export async function streamAssistant(
+  opts: RunOptions,
+  writer: WritableStreamDefaultWriter<Uint8Array>
+): Promise<void> {
+  const encoder = new TextEncoder();
+  const sse = async (data: object) => {
+    await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+  };
 
-  await saveMessage(db, conversationId, 'user', userMessage);
+  try {
+    const { ai, db, githubToken, anthropicKey, conversationId, userMessage } = opts;
 
-  const history = await getRecentMessages(db, conversationId, 20);
-  const pastMessages = history.filter(m => m.role !== 'tool');
+    const memories = await getMemories(db);
+    const systemPrompt = buildSystemPrompt(formatMemoriesForPrompt(memories));
+    await saveMessage(db, conversationId, 'user', userMessage);
+    const history = await getRecentMessages(db, conversationId, 20);
+    const pastMessages = history.filter(m => m.role !== 'tool');
 
-  if (anthropicKey) {
-    return runWithAnthropic({ anthropicKey, systemPrompt, pastMessages, userMessage, db, githubToken, conversationId });
+    const result = anthropicKey
+      ? await runWithAnthropic({ anthropicKey, systemPrompt, pastMessages, db, githubToken, conversationId })
+      : await runWithWorkersAI({ ai, systemPrompt, pastMessages, db, githubToken, conversationId });
+
+    // Stream reply word-by-word
+    const tokens = result.reply.split(/(\s+)/).filter(Boolean);
+    const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+    for (const token of tokens) {
+      await sse({ type: 'chunk', text: token });
+      await wait(token.match(/[.!?\n]/) ? 60 : 18);
+    }
+
+    await sse({ type: 'done' });
+  } catch (e) {
+    await sse({ type: 'error', error: String(e) });
+  } finally {
+    writer.close();
   }
-  return runWithWorkersAI({ ai, systemPrompt, pastMessages, userMessage, db, githubToken, conversationId });
 }
 
 // ── Anthropic backend ─────────────────────────────────────────
@@ -46,7 +70,6 @@ async function runWithAnthropic(opts: {
   anthropicKey: string;
   systemPrompt: string;
   pastMessages: { role: string; content: string }[];
-  userMessage: string;
   db: D1Database;
   githubToken: string;
   conversationId: string;
@@ -110,19 +133,14 @@ async function runWithAnthropic(opts: {
 
 type AIMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: unknown[]; tool_call_id?: string };
 
-// GLM returns OpenAI chat completion format
 type OAIResponse = {
   choices?: Array<{
     message: {
       content: string | null;
-      tool_calls?: Array<{
-        id: string;
-        function: { name: string; arguments: string };
-      }>;
+      tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
     };
     finish_reason: string;
   }>;
-  // Legacy Workers AI format fallback
   response?: string;
   tool_calls?: Array<{ name: string; arguments: Record<string, unknown> | string }>;
 };
@@ -153,7 +171,6 @@ async function runWithWorkersAI(opts: {
       max_tokens: 8192,
     }) as OAIResponse;
 
-    // Parse OpenAI format (GLM) or legacy Workers AI format
     const choice = response.choices?.[0];
     const oaiToolCalls = choice?.message?.tool_calls;
     const legacyToolCalls = response.tool_calls;
@@ -164,14 +181,12 @@ async function runWithWorkersAI(opts: {
       return { reply, memoriesAdded, tasksUpdated };
     }
 
-    // Handle OpenAI-format tool calls
     if (oaiToolCalls?.length) {
       messages.push({ role: 'assistant', content: null, tool_calls: oaiToolCalls });
       for (const call of oaiToolCalls) {
-        const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
         let result: unknown;
         try {
-          result = await executeTool(call.function.name as ToolName, args, { db, githubToken });
+          result = await executeTool(call.function.name as ToolName, JSON.parse(call.function.arguments), { db, githubToken });
           if (call.function.name === 'memory_save') memoriesAdded++;
           if (call.function.name === 'wildock_task_update') tasksUpdated++;
         } catch (e) {
@@ -182,7 +197,6 @@ async function runWithWorkersAI(opts: {
       continue;
     }
 
-    // Handle legacy Workers AI format tool calls
     if (legacyToolCalls?.length) {
       messages.push({ role: 'assistant', content: JSON.stringify(legacyToolCalls) });
       for (const call of legacyToolCalls) {

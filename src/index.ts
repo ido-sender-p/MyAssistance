@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { createConversation, logSession } from './memory/store';
-import { runAssistant } from './assistant';
+import { streamAssistant } from './assistant';
 import { UI_HTML } from './ui';
 
 interface Env {
@@ -72,36 +72,37 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
   let conversationId = await env.CACHE.get(sessionKey);
   if (!conversationId) {
     conversationId = await createConversation(env.DB);
-    // 7-day session TTL
     await env.CACHE.put(sessionKey, conversationId, { expirationTtl: 604800 });
   }
 
-  try {
-    const result = await runAssistant({
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+
+  // Send session ID as first SSE event
+  writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'start', sessionId })}\n\n`));
+
+  // Run assistant in background, stream to client
+  streamAssistant(
+    {
       ai: env.AI,
       db: env.DB,
       githubToken: env.GITHUB_TOKEN,
       anthropicKey: env.ANTHROPIC_API_KEY,
       conversationId,
       userMessage: message,
-    });
+    },
+    writer
+  ).catch(() => writer.close());
 
-    if (result.memoriesAdded > 0 || result.tasksUpdated > 0) {
-      await logSession(
-        env.DB,
-        conversationId,
-        null,
-        result.reply.slice(0, 200),
-        result.memoriesAdded,
-        result.tasksUpdated
-      );
-    }
-
-    return json({ reply: result.reply, sessionId });
-  } catch (e) {
-    console.error('Assistant error:', e);
-    return json({ error: 'Assistant failed', detail: String(e) }, 500);
-  }
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, X-Session-Id',
+    },
+  });
 }
 
 function json(data: unknown, status = 200): Response {

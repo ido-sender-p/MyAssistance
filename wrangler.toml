@@ -1,0 +1,22 @@
+name = "myassistance"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "myassistance-db"
+database_id = "d7e31d4f-9c22-431e-800b-dc51a9a5be67"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "1f35b4b7663a4cb296347dade1476ad5"
+
+[vars]
+ENVIRONMENT = "production"
+
+[[routes]]
+pattern = "myassistance.viibeu.com/*"
+zone_name = "viibeu.com"

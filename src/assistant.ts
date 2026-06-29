@@ -108,8 +108,24 @@ async function runWithAnthropic(opts: {
 
 // ── Workers AI backend ────────────────────────────────────────
 
-type AIMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string };
-type WorkersAIResponse = { response?: string; tool_calls?: Array<{ name: string; arguments: Record<string, unknown> | string }> };
+type AIMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: unknown[]; tool_call_id?: string };
+
+// GLM returns OpenAI chat completion format
+type OAIResponse = {
+  choices?: Array<{
+    message: {
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        function: { name: string; arguments: string };
+      }>;
+    };
+    finish_reason: string;
+  }>;
+  // Legacy Workers AI format fallback
+  response?: string;
+  tool_calls?: Array<{ name: string; arguments: Record<string, unknown> | string }>;
+};
 
 async function runWithWorkersAI(opts: {
   ai: Ai;
@@ -134,32 +150,55 @@ async function runWithWorkersAI(opts: {
     const response = await (ai.run as any)('@cf/zai-org/glm-4.7-flash', {
       messages,
       tools: workerToolDefinitions,
-      max_tokens: 4096,
-    }) as WorkersAIResponse;
+      max_tokens: 8192,
+    }) as OAIResponse;
 
-    const toolCalls = response.tool_calls;
+    // Parse OpenAI format (GLM) or legacy Workers AI format
+    const choice = response.choices?.[0];
+    const oaiToolCalls = choice?.message?.tool_calls;
+    const legacyToolCalls = response.tool_calls;
 
-    if (!toolCalls?.length) {
-      const reply = response.response ?? '';
+    if (!oaiToolCalls?.length && !legacyToolCalls?.length) {
+      const reply = choice?.message?.content ?? response.response ?? '';
       await saveMessage(db, conversationId, 'assistant', reply);
       return { reply, memoriesAdded, tasksUpdated };
     }
 
-    messages.push({ role: 'assistant', content: JSON.stringify(toolCalls) });
-
-    for (const call of toolCalls) {
-      const args = typeof call.arguments === 'string'
-        ? JSON.parse(call.arguments) as Record<string, unknown>
-        : call.arguments as Record<string, unknown>;
-      let result: unknown;
-      try {
-        result = await executeTool(call.name as ToolName, args, { db, githubToken });
-        if (call.name === 'memory_save') memoriesAdded++;
-        if (call.name === 'wildock_task_update') tasksUpdated++;
-      } catch (e) {
-        result = { error: String(e) };
+    // Handle OpenAI-format tool calls
+    if (oaiToolCalls?.length) {
+      messages.push({ role: 'assistant', content: null, tool_calls: oaiToolCalls });
+      for (const call of oaiToolCalls) {
+        const args = JSON.parse(call.function.arguments) as Record<string, unknown>;
+        let result: unknown;
+        try {
+          result = await executeTool(call.function.name as ToolName, args, { db, githubToken });
+          if (call.function.name === 'memory_save') memoriesAdded++;
+          if (call.function.name === 'wildock_task_update') tasksUpdated++;
+        } catch (e) {
+          result = { error: String(e) };
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
       }
-      messages.push({ role: 'tool', content: JSON.stringify(result) });
+      continue;
+    }
+
+    // Handle legacy Workers AI format tool calls
+    if (legacyToolCalls?.length) {
+      messages.push({ role: 'assistant', content: JSON.stringify(legacyToolCalls) });
+      for (const call of legacyToolCalls) {
+        const args = typeof call.arguments === 'string'
+          ? JSON.parse(call.arguments) as Record<string, unknown>
+          : call.arguments as Record<string, unknown>;
+        let result: unknown;
+        try {
+          result = await executeTool(call.name as ToolName, args, { db, githubToken });
+          if (call.name === 'memory_save') memoriesAdded++;
+          if (call.name === 'wildock_task_update') tasksUpdated++;
+        } catch (e) {
+          result = { error: String(e) };
+        }
+        messages.push({ role: 'tool', content: JSON.stringify(result) });
+      }
     }
   }
 }

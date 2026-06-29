@@ -34,6 +34,17 @@ export default {
       return json({ ok: true, env: env.ENVIRONMENT });
     }
 
+    if (pathname === '/api/debug-ai' && request.method === 'GET') {
+      const raw = await (env.AI.run as any)('@cf/zai-org/glm-4.7-flash', {
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant.' },
+          { role: 'user', content: 'Say hello in one sentence.' },
+        ],
+        max_tokens: 256,
+      });
+      return json({ raw });
+    }
+
     if (pathname === '/' || pathname === '') {
       return new Response(UI_HTML, {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' },

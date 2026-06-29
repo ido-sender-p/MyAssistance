@@ -131,7 +131,7 @@ async function runWithWorkersAI(opts: {
 
   while (true) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (ai.run as any)('@hf/nousresearch/hermes-2-pro-mistral-7b', {
+    const response = await (ai.run as any)('@cf/zai-org/glm-4.7-flash', {
       messages,
       tools: workerToolDefinitions,
       max_tokens: 4096,

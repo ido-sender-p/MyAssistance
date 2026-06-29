@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { createConversation, logSession } from './memory/store';
 import { runAssistant } from './assistant';
+import { UI_HTML } from './ui';
 
 interface Env {
   AI: Ai;
@@ -31,6 +32,12 @@ export default {
 
     if (pathname === '/api/health' && request.method === 'GET') {
       return json({ ok: true, env: env.ENVIRONMENT });
+    }
+
+    if (pathname === '/' || pathname === '') {
+      return new Response(UI_HTML, {
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' },
+      });
     }
 
     return json({ error: 'Not found' }, 404);

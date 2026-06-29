@@ -163,6 +163,16 @@ export const toolDefinitions: Anthropic.Tool[] = [
   },
 ];
 
+// Workers AI format (OpenAI-compatible) — derived from toolDefinitions
+export const workerToolDefinitions = toolDefinitions.map(t => ({
+  type: 'function' as const,
+  function: {
+    name: t.name,
+    description: t.description,
+    parameters: t.input_schema,
+  },
+}));
+
 // ── Tool execution ────────────────────────────────────────────
 
 interface ToolContext {

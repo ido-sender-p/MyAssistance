@@ -6,7 +6,7 @@ interface Env {
   AI: Ai;
   DB: D1Database;
   CACHE: KVNamespace;
-  ANTHROPIC_API_KEY: string;
+  ANTHROPIC_API_KEY?: string;
   GITHUB_TOKEN: string;
   ENVIRONMENT: string;
 }
@@ -60,6 +60,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
 
   try {
     const result = await runAssistant({
+      ai: env.AI,
       db: env.DB,
       githubToken: env.GITHUB_TOKEN,
       anthropicKey: env.ANTHROPIC_API_KEY,

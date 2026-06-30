@@ -174,7 +174,7 @@ async function runWithWorkersAI(opts: {
 
   while (true) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (ai.run as any)('@cf/qwen/qwen2.5-72b-instruct', {
+    const response = await (ai.run as any)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages,
       tools: workerToolDefinitions,
       max_tokens: 4096,

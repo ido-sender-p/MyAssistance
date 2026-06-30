@@ -92,8 +92,9 @@ async function runWithAnthropic(opts: {
 
   let memoriesAdded = 0;
   let tasksUpdated = 0;
+  let iterations = 0;
 
-  while (true) {
+  while (iterations++ < 6) {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 8096,
@@ -171,8 +172,9 @@ async function runWithWorkersAI(opts: {
 
   let memoriesAdded = 0;
   let tasksUpdated = 0;
+  let iterations = 0;
 
-  while (true) {
+  while (iterations++ < 6) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await (ai.run as any)('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages,

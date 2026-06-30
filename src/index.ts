@@ -10,6 +10,7 @@ interface Env {
   ANTHROPIC_API_KEY?: string;
   GITHUB_TOKEN: string;
   ENVIRONMENT: string;
+  CLOUDFLARE_ACCOUNT_ID: string;
 }
 
 const CORS: HeadersInit = {

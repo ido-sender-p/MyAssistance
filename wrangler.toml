@@ -17,6 +17,7 @@ id = "1f35b4b7663a4cb296347dade1476ad5"
 
 [vars]
 ENVIRONMENT = "production"
+CLOUDFLARE_ACCOUNT_ID = "f0228ab2e61af6659907ef88f14a1c02"
 
 [[routes]]
 pattern = "myassistance.viibeu.com/*"

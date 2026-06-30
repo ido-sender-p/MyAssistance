@@ -15,6 +15,10 @@ interface RunOptions {
   anthropicKey?: string;
   conversationId: string;
   userMessage: string;
+  cfAccountId: string;
+  cfWorkersToken: string;
+  cfZonesToken: string;
+  cfAccessToken: string;
 }
 
 export interface RunResult {
@@ -35,7 +39,10 @@ export async function streamAssistant(
   };
 
   try {
-    const { ai, db, githubToken, anthropicKey, conversationId, userMessage } = opts;
+    const { ai, db, githubToken, anthropicKey, conversationId, userMessage,
+            cfAccountId, cfWorkersToken, cfZonesToken, cfAccessToken } = opts;
+
+    const cfTokens = { cfAccountId, cfWorkersToken, cfZonesToken, cfAccessToken };
 
     const memories = await getMemories(db);
     const systemPrompt = buildSystemPrompt(formatMemoriesForPrompt(memories));
@@ -44,8 +51,8 @@ export async function streamAssistant(
     const pastMessages = history.filter(m => m.role !== 'tool');
 
     const result = anthropicKey
-      ? await runWithAnthropic({ anthropicKey, systemPrompt, pastMessages, db, githubToken, conversationId })
-      : await runWithWorkersAI({ ai, systemPrompt, pastMessages, db, githubToken, conversationId });
+      ? await runWithAnthropic({ anthropicKey, systemPrompt, pastMessages, db, githubToken, conversationId, cfTokens })
+      : await runWithWorkersAI({ ai, systemPrompt, pastMessages, db, githubToken, conversationId, cfTokens });
 
     // Stream reply word-by-word
     const tokens = result.reply.split(/(\s+)/).filter(Boolean);
@@ -73,8 +80,9 @@ async function runWithAnthropic(opts: {
   db: D1Database;
   githubToken: string;
   conversationId: string;
+  cfTokens: Record<string, string>;
 }): Promise<RunResult> {
-  const { anthropicKey, systemPrompt, pastMessages, db, githubToken, conversationId } = opts;
+  const { anthropicKey, systemPrompt, pastMessages, db, githubToken, conversationId, cfTokens } = opts;
   const client = new Anthropic({ apiKey: anthropicKey });
 
   const messages: Anthropic.MessageParam[] = pastMessages.map(m => ({
@@ -111,7 +119,7 @@ async function runWithAnthropic(opts: {
         if (block.type !== 'tool_use') continue;
         let result: unknown;
         try {
-          result = await executeTool(block.name as ToolName, block.input as Record<string, unknown>, { db, githubToken });
+          result = await executeTool(block.name as ToolName, block.input as Record<string, unknown>, { db, githubToken, ...cfTokens });
           if (block.name === 'memory_save') memoriesAdded++;
           if (block.name === 'wildock_task_update') tasksUpdated++;
         } catch (e) {
@@ -152,8 +160,9 @@ async function runWithWorkersAI(opts: {
   db: D1Database;
   githubToken: string;
   conversationId: string;
+  cfTokens: Record<string, string>;
 }): Promise<RunResult> {
-  const { ai, systemPrompt, pastMessages, db, githubToken, conversationId } = opts;
+  const { ai, systemPrompt, pastMessages, db, githubToken, conversationId, cfTokens } = opts;
 
   const messages: AIMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -186,7 +195,7 @@ async function runWithWorkersAI(opts: {
       for (const call of oaiToolCalls) {
         let result: unknown;
         try {
-          result = await executeTool(call.function.name as ToolName, JSON.parse(call.function.arguments), { db, githubToken });
+          result = await executeTool(call.function.name as ToolName, JSON.parse(call.function.arguments), { db, githubToken, ...cfTokens });
           if (call.function.name === 'memory_save') memoriesAdded++;
           if (call.function.name === 'wildock_task_update') tasksUpdated++;
         } catch (e) {
@@ -205,7 +214,7 @@ async function runWithWorkersAI(opts: {
           : call.arguments as Record<string, unknown>;
         let result: unknown;
         try {
-          result = await executeTool(call.name as ToolName, args, { db, githubToken });
+          result = await executeTool(call.name as ToolName, args, { db, githubToken, ...cfTokens });
           if (call.name === 'memory_save') memoriesAdded++;
           if (call.name === 'wildock_task_update') tasksUpdated++;
         } catch (e) {

@@ -11,6 +11,10 @@ interface Env {
   GITHUB_TOKEN: string;
   ENVIRONMENT: string;
   CLOUDFLARE_ACCOUNT_ID: string;
+  CLOUDFLARE_WORKERS_TOKEN: string;
+  CLOUDFLARE_ANALYTICS_TOKEN: string;
+  CLOUDFLARE_ZONES_TOKEN: string;
+  CLOUDFLARE_ACCESS_TOKEN: string;
 }
 
 const CORS: HeadersInit = {
@@ -92,6 +96,10 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
       anthropicKey: env.ANTHROPIC_API_KEY,
       conversationId,
       userMessage: message,
+      cfAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+      cfWorkersToken: env.CLOUDFLARE_WORKERS_TOKEN,
+      cfZonesToken: env.CLOUDFLARE_ZONES_TOKEN,
+      cfAccessToken: env.CLOUDFLARE_ACCESS_TOKEN,
     },
     writer
   ).catch(() => writer.close());

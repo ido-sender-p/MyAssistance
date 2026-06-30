@@ -178,6 +178,10 @@ export const workerToolDefinitions = toolDefinitions.map(t => ({
 interface ToolContext {
   db: D1Database;
   githubToken: string;
+  cfAccountId?: string;
+  cfWorkersToken?: string;
+  cfZonesToken?: string;
+  cfAccessToken?: string;
 }
 
 const REPOS: Record<string, string> = {

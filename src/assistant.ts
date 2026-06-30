@@ -165,10 +165,10 @@ async function runWithWorkersAI(opts: {
 
   while (true) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await (ai.run as any)('@cf/zai-org/glm-4.7-flash', {
+    const response = await (ai.run as any)('@cf/qwen/qwen2.5-72b-instruct', {
       messages,
       tools: workerToolDefinitions,
-      max_tokens: 8192,
+      max_tokens: 4096,
     }) as OAIResponse;
 
     const choice = response.choices?.[0];

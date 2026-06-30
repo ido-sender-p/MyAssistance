@@ -226,4 +226,6 @@ async function runWithWorkersAI(opts: {
       }
     }
   }
+
+  return { reply: 'הגעתי למגבלת הסבבים. נסה שוב.', memoriesAdded, tasksUpdated };
 }

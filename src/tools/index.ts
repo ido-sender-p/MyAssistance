@@ -163,15 +163,20 @@ export const toolDefinitions: Anthropic.Tool[] = [
   },
 ];
 
-// Workers AI format (OpenAI-compatible) — derived from toolDefinitions
-export const workerToolDefinitions = toolDefinitions.map(t => ({
-  type: 'function' as const,
-  function: {
-    name: t.name,
-    description: t.description,
-    parameters: t.input_schema,
-  },
-}));
+// Workers AI gets a reduced tool set — memory tools are redundant (memories already in system prompt)
+// and self_* tools are too risky for a weaker model
+const WORKER_EXCLUDED = new Set(['memory_search', 'memory_update', 'memory_save', 'self_read_file', 'self_write_file', 'self_deploy', 'github_create_pr']);
+
+export const workerToolDefinitions = toolDefinitions
+  .filter(t => !WORKER_EXCLUDED.has(t.name))
+  .map(t => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.input_schema,
+    },
+  }));
 
 // ── Tool execution ────────────────────────────────────────────
 

@@ -140,6 +140,24 @@ async function runWithAnthropic(opts: {
 
 // ── Workers AI backend ────────────────────────────────────────
 
+// llama sometimes embeds tool call JSON directly in content string instead of tool_calls
+function extractContentToolCalls(content: string): Array<{name: string; arguments: Record<string, unknown>}> | null {
+  const trimmed = content.trim();
+  const attempts = [trimmed];
+  const lastBrace = trimmed.lastIndexOf('{');
+  if (lastBrace > 0) attempts.push(trimmed.slice(lastBrace));
+
+  for (const attempt of attempts) {
+    try {
+      const p = JSON.parse(attempt) as Record<string, unknown>;
+      if (p.name && typeof p.name === 'string') {
+        return [{ name: p.name, arguments: (p.parameters ?? p.arguments ?? {}) as Record<string, unknown> }];
+      }
+    } catch { /* not valid JSON */ }
+  }
+  return null;
+}
+
 type AIMessage = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string | null; tool_calls?: unknown[]; tool_call_id?: string };
 
 type OAIResponse = {
@@ -188,6 +206,25 @@ async function runWithWorkersAI(opts: {
 
     if (!oaiToolCalls?.length && !legacyToolCalls?.length) {
       const reply = choice?.message?.content ?? response.response ?? '';
+
+      // Handle tool call JSON embedded in content string
+      const embeddedCalls = extractContentToolCalls(reply);
+      if (embeddedCalls?.length) {
+        messages.push({ role: 'assistant', content: reply });
+        for (const call of embeddedCalls) {
+          let result: unknown;
+          try {
+            result = await executeTool(call.name as ToolName, call.arguments, { db, githubToken, ...cfTokens });
+            if (call.name === 'memory_save') memoriesAdded++;
+            if (call.name === 'wildock_task_update') tasksUpdated++;
+          } catch (e) {
+            result = { error: String(e) };
+          }
+          messages.push({ role: 'tool', content: JSON.stringify(result) });
+        }
+        continue;
+      }
+
       await saveMessage(db, conversationId, 'assistant', reply);
       return { reply, memoriesAdded, tasksUpdated };
     }
